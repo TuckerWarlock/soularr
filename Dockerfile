@@ -4,7 +4,7 @@ COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
-COPY requirements.txt soularr.py run.sh .
+COPY requirements.txt soularr.py run.sh ./
 COPY webui/ webui/
 COPY resources/ resources/
 
