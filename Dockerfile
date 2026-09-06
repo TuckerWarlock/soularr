@@ -1,4 +1,6 @@
-FROM python:3.11
+FROM python:3.14
+
+COPY --from=ghcr.io/astral-sh/uv:0.12.9 /uv /uvx /usr/local/bin/
 
 WORKDIR /app
 
@@ -9,7 +11,7 @@ COPY resources/ resources/
 RUN apt-get update \
     && apt-get install -y tini \
     && rm -rf /var/lib/apt/lists/* \
-    && pip install --no-cache-dir -r requirements.txt \
+    && uv pip install --system --no-cache-dir -r requirements.txt \
     && sed -i 's/\r$//' run.sh \
     && chmod +x run.sh
 
