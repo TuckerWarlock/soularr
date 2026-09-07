@@ -84,6 +84,7 @@ search_blacklist = []
 
 # === Runtime State & Caches ===
 search_cache = {}
+peer_info_cache = {}
 folder_cache = {}
 broken_user = []
 
@@ -488,11 +489,18 @@ def search_for_album(album):
     if album_id not in search_cache:
         search_cache[album_id] = {}  # This is so we can check for matches we missed or if a user goes offline during our download
 
+    peer_info_cache.setdefault(album_id, {})
     for result in search_results:  # Switching to cached version. One less API call
         username = result["username"]
         if username not in search_cache[album_id]:
             # If we don't currently have a cache for a user set one up
             search_cache[album_id][username] = {}
+        # Snapshot availability so we can prefer free/idle peers over busy ones when choosing who to grab from
+        peer_info_cache[album_id][username] = {
+            "hasFreeUploadSlot": result.get("hasFreeUploadSlot", False),
+            "queueLength": result.get("queueLength", 0),
+            "uploadSpeed": result.get("uploadSpeed", 0),
+        }
         logger.info(f"Caching and truncating results for user: {username}")
         init_files = result["files"]  # init_files short for initial files. Before truncating
         # Search the returned files and only cache files that are of the allowed_filetypes
@@ -585,12 +593,31 @@ def downloads_all_done(downloads):
     return all_done, error_list, remote_queue
 
 
+def rank_candidates(album_id, usernames):
+    """
+    Orders candidate usernames so free-slot/short-queue peers are tried before busy ones.
+    A peer stuck behind a long remote queue can look like a match but never actually transfer.
+    """
+    peer_info = peer_info_cache.get(album_id, {})
+
+    def sort_key(username):
+        info = peer_info.get(username, {})
+        return (
+            not info.get("hasFreeUploadSlot", False),
+            info.get("queueLength", 0),
+            -info.get("uploadSpeed", 0),
+        )
+
+    return sorted(usernames, key=sort_key)
+
+
 def try_enqueue(all_tracks, results, allowed_filetype):
     """
     Single album match and enqueue.
     Iterates over all users and enqueues a found match
     """
-    for username in results:
+    album_id = all_tracks[0]["albumId"]
+    for username in rank_candidates(album_id, results):
         if allowed_filetype not in results[username]:
             continue
         logger.debug(f"Parsing result from user: {username}")
@@ -641,10 +668,11 @@ def try_multi_enqueue(release, all_tracks, results, allowed_filetype):
             if track["mediumNumber"] == media["mediumNumber"]:
                 disk["tracks"].append(track)
         split_release.append(disk)
+    album_id = all_tracks[0]["albumId"]
     total = len(split_release)
     count_found = 0
     for disk in split_release:
-        for username in tmp_results:
+        for username in rank_candidates(album_id, tmp_results):
             if allowed_filetype not in tmp_results[username]:
                 continue
             file_dirs = results[username][allowed_filetype]
