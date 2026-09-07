@@ -611,6 +611,16 @@ def rank_candidates(album_id, usernames):
     return sorted(usernames, key=sort_key)
 
 
+def log_peer_availability(album_id, username):
+    """Logs the chosen peer's slot/queue/speed so it's visible why they were picked over alternatives."""
+    info = peer_info_cache.get(album_id, {}).get(username, {})
+    slot = "free" if info.get("hasFreeUploadSlot") else "busy"
+    logger.info(
+        f"Chosen peer {username}: upload slot {slot}, queue length {info.get('queueLength', 'unknown')}, "
+        f"upload speed {info.get('uploadSpeed', 'unknown')} bits/sec"
+    )
+
+
 def try_enqueue(all_tracks, results, allowed_filetype):
     """
     Single album match and enqueue.
@@ -624,6 +634,7 @@ def try_enqueue(all_tracks, results, allowed_filetype):
         file_dirs = results[username][allowed_filetype]
         found, directory, file_dir = check_for_match(all_tracks, allowed_filetype, file_dirs, username)
         if found:
+            log_peer_availability(album_id, username)
             directory = download_filter(allowed_filetype, directory)
             for i in range(0, len(directory["files"])):
                 directory["files"][i]["filename"] = file_dir + "\\" + directory["files"][i]["filename"]
@@ -678,6 +689,7 @@ def try_multi_enqueue(release, all_tracks, results, allowed_filetype):
             file_dirs = results[username][allowed_filetype]
             found, directory, file_dir = check_for_match(disk["tracks"], allowed_filetype, file_dirs, username)
             if found:
+                log_peer_availability(album_id, username)
                 directory = download_filter(allowed_filetype, directory)
                 disk["source"] = (username, directory, file_dir)
                 count_found += 1
